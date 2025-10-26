@@ -5,9 +5,9 @@ class RushHourPuzzle:
     def __init__(self,csv_file=None):
         self.board_height = 0
         self.board_width = 0
-        self.vehicles = []  # List of vehicle dictionaries
-        self.walls = []     # List of (row, col) for walls
-        self.board = []     # 2D board
+        self.vehicles = [] 
+        self.walls = []     
+        self.board = []     
         if csv_file:
             self.setVehicles(csv_file)
             self.setBoard()
@@ -27,11 +27,9 @@ class RushHourPuzzle:
                 if not row:
                     continue
                 if row[0] == "#":
-                    # Wall
                     c,r = int(row[1]), int(row[2])
                     self.walls.append((r, c))
                 else:
-                    # Vehicle
                     vid = row[0]
                     c,r = int(row[1]), int(row[2])
                     orientation = row[3]
@@ -71,6 +69,7 @@ class RushHourPuzzle:
                     self.board[r_pos][c_pos] = v["id"]
             else:
                 print(f"Cannot place vehicle {v['id']} at ({r},{c})!")
+
     def isGoal(self):
         for v in self.vehicles:
             if v["id"] == "X":
@@ -84,15 +83,13 @@ class RushHourPuzzle:
         
     def printBoard(self):
         print("\nBoard:")
-        # Print column numbers
         print("   " + " ".join(f"{c}" for c in range(self.board_width)))
         print("  " + "--" * self.board_width)
         for r in range(self.board_height):
             row_str = f"{r}| " + " ".join(self.board[r])
             print(row_str)
-    def successorFunction(self):
-        
 
+    def successorFunction(self):
         successors = []
         for v in self.vehicles:
             vid = v["id"]
@@ -101,10 +98,8 @@ class RushHourPuzzle:
             orientation = v["orientation"]
 
             if orientation == "H":
-                # move right: check cell just after rightmost cell
                 if c + length < self.board_width and self.board[r][c + length] == " ":
                     new_puzzle = deepcopy(self)
-                    # find vehicle in new_puzzle and update col
                     for nv in new_puzzle.vehicles:
                         if nv["id"] == vid:
                             nv["col"] += 1
@@ -112,8 +107,6 @@ class RushHourPuzzle:
                     new_puzzle.setBoard()
                     action = f"Move {vid} right"
                     successors.append((action, new_puzzle))
-
-                # move left: check cell just before leftmost cell
                 if c - 1 >= 0 and self.board[r][c - 1] == " ":
                     new_puzzle = deepcopy(self)
                     for nv in new_puzzle.vehicles:
@@ -125,7 +118,6 @@ class RushHourPuzzle:
                     successors.append((action, new_puzzle))
 
             elif orientation == "V":
-                # move down: check cell just after bottom cell
                 if r + length < self.board_height and self.board[r + length][c] == " ":
                     new_puzzle = deepcopy(self)
                     for nv in new_puzzle.vehicles:
@@ -135,8 +127,7 @@ class RushHourPuzzle:
                     new_puzzle.setBoard()
                     action = f"Move {vid} down"
                     successors.append((action, new_puzzle))
-
-                # move up: check cell just before top cell
+                    
                 if r - 1 >= 0 and self.board[r - 1][c] == " ":
                     new_puzzle = deepcopy(self)
                     for nv in new_puzzle.vehicles:

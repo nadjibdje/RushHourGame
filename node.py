@@ -5,6 +5,8 @@ class Node:
         self.action=action
         self.g=g
         self.f=0
+    def __lt__(self, other):
+        return self.f < other.f
     
     def getPath(self):
         path = []
