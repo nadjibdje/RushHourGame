@@ -1,119 +1,128 @@
+# rush_hour.py
 import csv
 from copy import deepcopy
 
 class RushHourPuzzle:
-    def __init__(self,csv_file=None):
+    def __init__(self, csv_file=None):
         self.board_height = 0
         self.board_width = 0
-        self.vehicles = []  # List of vehicle dictionaries
-        self.walls = []     # List of (row, col) for walls
-        self.board = []     # 2D board
+        self.vehicles = []  # List of vehicle dicts: {"id","row","col","orientation","length"}
+        self.walls = []     # List of (row, col)
+        self.board = []     # 2D board matrix
         if csv_file:
             self.setVehicles(csv_file)
             self.setBoard()
 
     def setVehicles(self, csv_file):
-        """Reads the CSV and generates vehicles and walls lists; sets board dimensions."""
+        """Reads CSV: first row -> height,width ; next rows -> vehicles or walls.
+        Vehicle row format expected: id, col, row, orientation(H/V), length
+        Wall row format expected: '#', col, row
+        """
         with open(csv_file, newline='') as csvfile:
             reader = csv.reader(csvfile)
-            
-            # First row = board size
-            first_row = next(reader)
+            # first non-empty row -> board dims
+            first_row = None
+            for row in reader:
+                row = [c.strip() for c in row if c.strip() != ""]
+                if row:
+                    first_row = row
+                    break
+            if not first_row:
+                raise ValueError("CSV vide ou mal formatté")
             self.board_height, self.board_width = map(int, first_row)
 
-            # Read remaining rows
+            # remaining rows
             for row in reader:
-                row = [cell.strip() for cell in row if cell.strip()]
+                row = [c.strip() for c in row if c.strip() != ""]
                 if not row:
                     continue
                 if row[0] == "#":
-                    # Wall
-                    c,r = int(row[1]), int(row[2])
+                    c, r = int(row[1]), int(row[2])
                     self.walls.append((r, c))
                 else:
-                    # Vehicle
                     vid = row[0]
-                    c,r = int(row[1]), int(row[2])
-                    orientation = row[3]
+                    c, r = int(row[1]), int(row[2])
+                    orientation = row[3].upper()
                     length = int(row[4])
                     vehicle = {"id": vid, "row": r, "col": c, "orientation": orientation, "length": length}
                     self.vehicles.append(vehicle)
 
     def setBoard(self):
-        # Initialize empty board
+        # create empty board
         self.board = [[" " for _ in range(self.board_width)] for _ in range(self.board_height)]
 
-        # Place walls
+        # walls
         for r, c in self.walls:
             if 0 <= r < self.board_height and 0 <= c < self.board_width:
                 self.board[r][c] = "#"
 
-        # Place vehicles
+        # vehicles (place them if possible)
         for v in self.vehicles:
             r, c = v["row"], v["col"]
             length = v["length"]
-            orientation = v["orientation"]
+            orient = v["orientation"]
             can_place = True
-
-            # Check bounds and overlap
+            coords = []
             for i in range(length):
-                r_pos = r + i if orientation == "V" else r
-                c_pos = c + i if orientation == "H" else c
-                if r_pos >= self.board_height or c_pos >= self.board_width or self.board[r_pos][c_pos] != " ":
+                rr = r + i if orient == "V" else r
+                cc = c + i if orient == "H" else c
+                if not (0 <= rr < self.board_height and 0 <= cc < self.board_width):
                     can_place = False
                     break
-
-            # Place vehicle if possible
+                if self.board[rr][cc] != " ":
+                    can_place = False
+                    break
+                coords.append((rr, cc))
             if can_place:
-                for i in range(length):
-                    r_pos = r + i if orientation == "V" else r
-                    c_pos = c + i if orientation == "H" else c
-                    self.board[r_pos][c_pos] = v["id"]
+                for (rr, cc) in coords:
+                    self.board[rr][cc] = v["id"]
             else:
-                print(f"Cannot place vehicle {v['id']} at ({r},{c})!")
+                # warning but continue
+                print(f"Warning: cannot place vehicle {v['id']} at ({r},{c})")
+
     def isGoal(self):
+        # Goal: red car 'X' is horizontal and its rightmost cell reaches board_width
         for v in self.vehicles:
             if v["id"] == "X":
                 if v["orientation"] != "H":
                     return False
                 c = v["col"]
-                length = v["length"] 
-                if (c == self.board_width - length):
+                length = v["length"]
+                # rightmost column index of X is c + length - 1 ; goal when equals board_width - 1
+                if c + length == self.board_width:
                     return True
         return False
-        
+
     def printBoard(self):
+        # print columns
         print("\nBoard:")
-        # Print column numbers
-        print("   " + " ".join(f"{c}" for c in range(self.board_width)))
+        print("   " + " ".join(str(c) for c in range(self.board_width)))
         print("  " + "--" * self.board_width)
         for r in range(self.board_height):
-            row_str = f"{r}| " + " ".join(self.board[r])
-            print(row_str)
-    def successorFunction(self):
-        
+            print(f"{r}| " + " ".join(self.board[r]))
+        print("  " + "--" * self.board_width)
 
+    def successorFunction(self):
+        """Return list of (action_str, new_state) for moving each vehicle by one step if possible."""
         successors = []
         for v in self.vehicles:
             vid = v["id"]
             r, c = v["row"], v["col"]
             length = v["length"]
-            orientation = v["orientation"]
+            orient = v["orientation"]
 
-            if orientation == "H":
-                # move right: check cell just after rightmost cell
+            if orient == "H":
+                # move right
                 if c + length < self.board_width and self.board[r][c + length] == " ":
                     new_puzzle = deepcopy(self)
-                    # find vehicle in new_puzzle and update col
                     for nv in new_puzzle.vehicles:
                         if nv["id"] == vid:
                             nv["col"] += 1
                             break
                     new_puzzle.setBoard()
-                    action = f"Move {vid} right"
+                    action = (vid, "R")
                     successors.append((action, new_puzzle))
-
-                # move left: check cell just before leftmost cell
+                # move left
                 if c - 1 >= 0 and self.board[r][c - 1] == " ":
                     new_puzzle = deepcopy(self)
                     for nv in new_puzzle.vehicles:
@@ -121,11 +130,11 @@ class RushHourPuzzle:
                             nv["col"] -= 1
                             break
                     new_puzzle.setBoard()
-                    action = f"Move {vid} left"
+                    action = (vid, "L")
                     successors.append((action, new_puzzle))
 
-            elif orientation == "V":
-                # move down: check cell just after bottom cell
+            else:  # V
+                # move down
                 if r + length < self.board_height and self.board[r + length][c] == " ":
                     new_puzzle = deepcopy(self)
                     for nv in new_puzzle.vehicles:
@@ -133,10 +142,9 @@ class RushHourPuzzle:
                             nv["row"] += 1
                             break
                     new_puzzle.setBoard()
-                    action = f"Move {vid} down"
+                    action = (vid, "D")
                     successors.append((action, new_puzzle))
-
-                # move up: check cell just before top cell
+                # move up
                 if r - 1 >= 0 and self.board[r - 1][c] == " ":
                     new_puzzle = deepcopy(self)
                     for nv in new_puzzle.vehicles:
@@ -144,10 +152,13 @@ class RushHourPuzzle:
                             nv["row"] -= 1
                             break
                     new_puzzle.setBoard()
-                    action = f"Move {vid} up"
+                    action = (vid, "U")
                     successors.append((action, new_puzzle))
 
         return successors
-    
+
     def getStateKey(self):
-        return tuple(tuple(row) for row in self.board)
+        """Return compact state key: tuple of (id,row,col) sorted by id.
+           Faster and robust vs using full board matrix."""
+        key = tuple((v["id"], v["row"], v["col"]) for v in sorted(self.vehicles, key=lambda x: x["id"]))
+        return key

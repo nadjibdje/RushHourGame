@@ -1,70 +1,82 @@
-#init  code =Node (init - state )
-# init-codeset F (1)
-#OPEN = PriorityQueue ()
-#Closed=[]
-#while (open is not null)
-#    current = open.pop(F_min)
-#    Fcurrent.state is goal ()=return current
-#    Closed.add(current)
-#for ( action,succ_state) in current.stqte.succfet()
-#   child = Node (succ_state;current , action)
-#child.setF()
-#if  child.state not  in  Open qnd  not in Closed 
-#   Open.add(child)
-#elif child.stqte in  open 
-#   child f < n*f
-#elif child.state in Closed 
-#   child f < n*f 
-#   remove n from closed
-#   add child  to  open 
-
+# a.py
 import heapq
 from node import Node
 
-# ==========================
-#      HEURISTICS
-# ==========================
+def astar(initial_state, heuristic, successorFn=None, isGoal=None):
+    """
+    A* search.
+    - initial_state: RushHourPuzzle
+    - heuristic: function(state) -> number (h)
+    - successorFn(state) -> list of (action, successor)  [optional]
+    - isGoal(state) -> bool  [optional]
+    Returns goal Node or None.
+    """
+    if successorFn is None:
+        successorFn = lambda s: s.successorFunction()
+    if isGoal is None:
+        isGoal = lambda s: s.isGoal()
 
+    start = Node(initial_state, None, None, 0)
+    start.setF(heuristic)
+
+    open_list = []
+    heapq.heappush(open_list, (start.f, start))
+    g_costs = {initial_state.getStateKey(): 0}
+    closed = set()
+
+    while open_list:
+        _, current = heapq.heappop(open_list)
+
+        # If popped state has been expanded with a better cost, skip it
+        cur_key = current.state.getStateKey()
+        if cur_key in closed:
+            continue
+
+        if isGoal(current.state):
+            return current
+
+        closed.add(cur_key)
+
+        for action, succ in successorFn(current.state):
+            succ_key = succ.getStateKey()
+            g_new = current.g + 1
+
+            # If we already have a better g for this state, skip
+            if succ_key in g_costs and g_new >= g_costs[succ_key]:
+                continue
+
+            child = Node(succ, current, action, g_new)
+            child.setF(heuristic)
+
+            g_costs[succ_key] = g_new
+            # push into open list
+            heapq.heappush(open_list, (child.f, child))
+
+    return None
+
+
+# =========================
+# Heuristics
+# =========================
 def h1(state):
-    """Distance from the red car X to the exit."""
+    """Distance in columns from rightmost cell of X to the board right edge (number of empty squares)."""
     red = next(v for v in state.vehicles if v["id"] == "X")
     distance = state.board_width - (red["col"] + red["length"])
     return distance
 
-
 def h2(state):
-    """h1 + number of vehicles blocking the exit path."""
+    """h1 + number of distinct vehicles blocking the exit row in front of X."""
     red = next(v for v in state.vehicles if v["id"] == "X")
     y = red["row"]
-    blocking = 0
-    for x in range(red["col"] + red["length"], state.board_width):
-        if state.board[y][x] != " ":
-            blocking += 1
-    return h1(state) + blocking
-
-
-def h3(state):
-    """
-    Improved heuristic: h2 + penalty for blocking vehicles that are themselves blocked.
-    This encourages moving vehicles that can actually be freed.
-    """
-    red = next(v for v in state.vehicles if v["id"] == "X")
-    y = red["row"]
-    blocking = 0
-    penalty = 0
+    blocking_ids = set()
     for x in range(red["col"] + red["length"], state.board_width):
         cell = state.board[y][x]
-        if cell != " ":
-            blocking += 1
-            vehicle = next(v for v in state.vehicles if v["id"] == cell)
-            # check if that vehicle can move at all
-            if not can_vehicle_move(state, vehicle):
-                penalty += 1
-    return h1(state) + blocking + penalty
-
+        if cell != " " and cell != "#":
+            blocking_ids.add(cell)
+    return h1(state) + len(blocking_ids)
 
 def can_vehicle_move(state, vehicle):
-    """Check if a vehicle has any free space to move."""
+    """Check if a vehicle has at least one free move (used by h3)."""
     r, c = vehicle["row"], vehicle["col"]
     length, orient = vehicle["length"], vehicle["orientation"]
 
@@ -84,37 +96,24 @@ def can_vehicle_move(state, vehicle):
             return True
     return False
 
-# ==========================
-#        A* SEARCH
-# ==========================
-
-def astar(initial_state, heuristic):
+def h3(state):
     """
-    Generic A* search.
-    heuristic: one of h1, h2, h3
+    Improved heuristic: h2 + penalty for blocking vehicles that are themselves blocked.
+    Encourages moves that free blockers.
     """
-    start_node = Node(initial_state, None, None, 0)
-    start_node.setF(heuristic)
-    
-    open_list = []
-    heapq.heappush(open_list, (start_node.f, start_node))
-    visited = set()
-    visited.add(initial_state.getStateKey())
+    red = next(v for v in state.vehicles if v["id"] == "X")
+    y = red["row"]
+    blocking_ids = set()
+    penalty = 0
+    for x in range(red["col"] + red["length"], state.board_width):
+        cell = state.board[y][x]
+        if cell != " " and cell != "#":
+            blocking_ids.add(cell)
 
-    while open_list:
-        _, current_node = heapq.heappop(open_list)
-        current_state = current_node.state
+    # For each blocking vehicle, check if it can move at all in current state
+    for bid in blocking_ids:
+        vehicle = next(v for v in state.vehicles if v["id"] == bid)
+        if not can_vehicle_move(state, vehicle):
+            penalty += 1
 
-        if current_state.isGoal():
-            return current_node
-
-        for action, successor in current_state.successorFunction():
-            key = successor.getStateKey()
-            if key in visited:
-                continue
-            visited.add(key)
-            new_node = Node(successor, current_node, action, current_node.g + 1)
-            new_node.setF(heuristic)
-            heapq.heappush(open_list, (new_node.f, new_node))
-
-    return None
+    return h1(state) + len(blocking_ids) + penalty

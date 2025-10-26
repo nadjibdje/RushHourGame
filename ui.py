@@ -1,10 +1,10 @@
 import pygame
-from copy import deepcopy
 from rush_hour import RushHourPuzzle
 from BFS import bfs
+from a import astar, h3  # on utilise h3 par défaut, tu peux changer
 
-
-# CONSTANTS 
+# === CONSTANTS ===
+csv_file = "examples/2-c.csv"
 CELL = 84
 PADDING = 8
 MARGIN = 40
@@ -18,12 +18,13 @@ TXT = (32, 32, 32)
 BTN_W, BTN_H = 220, 48
 BTN_BG = (30, 180, 120)
 BTN_BG_HOVER = (26, 160, 108)
+BTN_BG_DISABLED = (160, 160, 160)
 BTN_TXT = (255, 255, 255)
 BTN_RADIUS = 10
 
 
-# DRAW FUNCTION 
-def draw_board(screen, font, state: RushHourPuzzle, button_rect, info_text):
+# === DRAW FUNCTION ===
+def draw_board(screen, font, state: RushHourPuzzle):
     screen.fill(BG)
 
     # Grid
@@ -49,7 +50,17 @@ def draw_board(screen, font, state: RushHourPuzzle, button_rect, info_text):
     exit_h = CELL - 2 * PADDING
     pygame.draw.rect(screen, EXIT_COLOR, (exit_x, exit_y, 12, exit_h), border_radius=6)
 
-    # Draw Vehicles with padding
+    # Draw Walls
+    for (r, c) in state.walls:
+        x = MARGIN + c * CELL + PADDING
+        y = MARGIN + r * CELL + PADDING
+        w = CELL - 2 * PADDING
+        h = CELL - 2 * PADDING
+        rect = pygame.Rect(x, y, w, h)
+        pygame.draw.rect(screen, (80, 80, 80), rect, border_radius=10)
+        pygame.draw.rect(screen, (0, 0, 0), rect, 1, border_radius=10)
+
+    # Draw Vehicles
     for v in state.vehicles:
         color = XCOLOR if v["id"] == "X" else VCOLOR
         r, c = v["row"], v["col"]
@@ -67,100 +78,119 @@ def draw_board(screen, font, state: RushHourPuzzle, button_rect, info_text):
         rect = pygame.Rect(x, y, w, h)
         pygame.draw.rect(screen, color, rect, border_radius=16)
         pygame.draw.rect(screen, (0, 0, 0), rect, 1, border_radius=16)
-
         label = font.render(v["id"], True, (255, 255, 255))
         screen.blit(label, (rect.x + 8, rect.y + 6))
 
-    # Draw Restart button
-    mx, my = pygame.mouse.get_pos()
-    is_hover = button_rect.collidepoint(mx, my)
-    pygame.draw.rect(screen, BTN_BG_HOVER if is_hover else BTN_BG, button_rect, border_radius=BTN_RADIUS)
-    txt = font.render("Restart", True, BTN_TXT)
-    screen.blit(txt, (button_rect.x + (BTN_W - txt.get_width()) // 2, button_rect.y + (BTN_H - txt.get_height()) // 2))
 
-    # Info text BELOW the button
-    if info_text:
-        info = font.render(info_text, True, TXT)
-        info_x = button_rect.centerx - info.get_width() // 2
-        info_y = button_rect.bottom + 10
-        screen.blit(info, (info_x, info_y))
+# === BUTTON DRAW ===
+def draw_button(screen, font, rect, text, enabled=True):
+    mx, my = pygame.mouse.get_pos()
+    is_hover = rect.collidepoint(mx, my)
+    color = BTN_BG_DISABLED if not enabled else (BTN_BG_HOVER if is_hover else BTN_BG)
+    pygame.draw.rect(screen, color, rect, border_radius=BTN_RADIUS)
+    txt = font.render(text, True, BTN_TXT)
+    screen.blit(txt, (rect.x + (rect.width - txt.get_width()) // 2,
+                      rect.y + (rect.height - txt.get_height()) // 2))
 
 
 # === MAIN FUNCTION ===
 def run_ui():
-    # Load puzzle
-    puzzle = RushHourPuzzle(csv_file="examples/2-a.csv")
+    puzzle = RushHourPuzzle(csv_file=csv_file)
 
-    # Solve using BFS
-    print("Solving with BFS...")
-    node = bfs(puzzle, RushHourPuzzle.successorFunction, RushHourPuzzle.isGoal)
-    if not node:
-        print("No solution found.")
-        return
-
-    path = node.getPath()
-    print(f"Solution found with {len(path) - 1} steps.")
-
-    # Setup Pygame
     pygame.init()
     font = pygame.font.SysFont(None, 26)
 
-    # Window height now bigger to fit bottom text
     W = MARGIN * 2 + puzzle.board_width * CELL
-    H = MARGIN * 2 + puzzle.board_height * CELL + BTN_H
+    H = MARGIN * 2 + puzzle.board_height * CELL + BTN_H + 20
     screen = pygame.display.set_mode((W, H))
-    pygame.display.set_caption("Rush Hour — BFS Visualizer")
+    pygame.display.set_caption("Rush Hour — Solver Visualizer")
     clock = pygame.time.Clock()
 
-    # State
-    step = 0
-    playing = True
-    STEP_DELAY = 800  # milliseconds
-    last_step_time = pygame.time.get_ticks()
+    # Buttons
+    bfs_btn = pygame.Rect(W // 2 - BTN_W - 10, MARGIN + puzzle.board_height * CELL + 8, BTN_W, BTN_H)
+    astar_btn = pygame.Rect(W // 2 + 10, MARGIN + puzzle.board_height * CELL + 8, BTN_W, BTN_H)
+    restart_btn = pygame.Rect(W // 2 - BTN_W // 2, MARGIN + puzzle.board_height * CELL + 8, BTN_W, BTN_H)
 
-    # Button
-    button_rect = pygame.Rect(
-        MARGIN + (puzzle.board_width * CELL - BTN_W) // 2,
-        MARGIN + puzzle.board_height * CELL + 8,
-        BTN_W, BTN_H
-    )
+    # States
+    path = None
+    step = 0
+    playing = False
+    solving = False
+    algo = None
+    STEP_DELAY = 800
+    last_step_time = pygame.time.get_ticks()
 
     running = True
     while running:
         current_time = pygame.time.get_ticks()
+
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
+
             elif event.type == pygame.MOUSEBUTTONDOWN:
-                if button_rect.collidepoint(event.pos):
-                    step = 0
+                # === BFS Button ===
+                if bfs_btn.collidepoint(event.pos) and not solving and not playing:
+                    solving = True
+                    algo = "BFS"
+                    print("Solving with BFS...")
+                    node = bfs(puzzle, RushHourPuzzle.successorFunction, RushHourPuzzle.isGoal)
+                    if node:
+                        path = node.getPath()
+                        print(f"BFS found solution in {len(path) - 1} steps.")
+                    else:
+                        print("No solution found.")
+                    solving = False
                     playing = True
-                    last_step_time = current_time
+                    step = 0
+
+                # === A* Button ===
+                elif astar_btn.collidepoint(event.pos) and not solving and not playing:
+                    solving = True
+                    algo = "A*"
+                    print("Solving with A* (h3)...")
+                    node = astar(puzzle, h3)
+                    if node:
+                        path = node.getPath()
+                        print(f"A* found solution in {len(path) - 1} steps.")
+                    else:
+                        print("No solution found.")
+                    solving = False
+                    playing = True
+                    step = 0
+
+                # === Restart Button ===
+                elif path and restart_btn.collidepoint(event.pos) and not solving:
+                    puzzle = RushHourPuzzle(csv_file=csv_file)
+                    path = None
+                    algo = None
+                    playing = False
+                    solving = False
+                    step = 0
 
         # Auto-advance steps
-        if playing and current_time - last_step_time >= STEP_DELAY:
+        if playing and not solving and path and current_time - last_step_time >= STEP_DELAY:
             if step < len(path) - 1:
                 step += 1
                 last_step_time = current_time
             else:
                 playing = False
 
-        # Display
-        # Display
-        info = f"Step: {step}/{len(path) - 1}"
-        if not playing:
-            info += "  |  Done!"
+        # === DRAW ===
+        draw_board(screen, font, puzzle if not path else path[step])
 
-        # Draw everything
-        draw_board(screen, font, path[step], button_rect, None)
+        if not path:
+                draw_button(screen, font, bfs_btn, "Solve with BFS", enabled=not solving)
+                draw_button(screen, font, astar_btn, "Solve with A*", enabled=not solving)
+        else:
+                draw_button(screen, font, restart_btn, "Restart", enabled=not solving)
+                info = f"{algo} | Step: {step}/{len(path) - 1}"
+                info_surf = font.render(info, True, TXT)
+                screen.blit(info_surf, (restart_btn.right + 20, restart_btn.centery - info_surf.get_height() // 2))
 
-        # Draw info text next to Restart button
-        info_surf = font.render(info, True, TXT)
-        info_x = button_rect.right + 20  # spacing to the right of button
-        info_y = button_rect.centery - info_surf.get_height() // 2
-        screen.blit(info_surf, (info_x, info_y))
-
-
+                if not playing:
+                    done_surf = font.render("Done!", True, TXT)
+                    screen.blit(done_surf, (restart_btn.right + 20, restart_btn.centery + info_surf.get_height()))
         pygame.display.flip()
         clock.tick(30)
 
