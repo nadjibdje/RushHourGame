@@ -26,7 +26,7 @@ A Python-based visualizer for the classic **Rush Hour puzzle**, supporting both 
 
 ```bash
 git clone https://github.com/nadjibdje/RushHourGame.git
-cd rush-hour-visualizer
+cd RushHourGame
 ```
 
 2. Install dependencies (Python 3.10+ recommended):
